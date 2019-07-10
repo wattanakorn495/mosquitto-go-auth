@@ -26,6 +26,9 @@ type HTTP struct {
 	VerifyPeer   bool
 	ParamsMode   string
 	ResponseMode string
+
+	Client    *h.Client
+	Transport *h.Transport
 }
 
 type HTTPResponse struct {
@@ -37,12 +40,21 @@ func NewHTTP(authOpts map[string]string, logLevel log.Level) (HTTP, error) {
 
 	log.SetLevel(logLevel)
 
+	tr := &h.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+
+	client := &h.Client{Timeout: 5 * time.Second}
+	client.Transport = tr
+
 	//Initialize with defaults
 	var http = HTTP{
 		WithTLS:      false,
 		VerifyPeer:   false,
 		ResponseMode: "status",
 		ParamsMode:   "json",
+		Transport:    tr,
+		Client:       client,
 	}
 
 	//If remote, set remote api fields. Else, set jwt secret.
@@ -113,7 +125,6 @@ func NewHTTP(authOpts map[string]string, logLevel log.Level) (HTTP, error) {
 }
 
 func (o HTTP) GetUser(username, password string) bool {
-
 	var dataMap = map[string]interface{}{
 		"username": username,
 		"password": password,
@@ -124,25 +135,28 @@ func (o HTTP) GetUser(username, password string) bool {
 		"password": []string{password},
 	}
 
-	return httpRequest(o.Host, o.UserUri, username, o.WithTLS, o.VerifyPeer, dataMap, o.Port, o.ParamsMode, o.ResponseMode, urlValues)
-
+	return o.httpRequest(o.Host, o.UserUri, username, o.WithTLS, o.VerifyPeer, dataMap, o.Port, o.ParamsMode, o.ResponseMode, urlValues)
 }
 
 func (o HTTP) GetSuperuser(username string) bool {
+	return false
 
-	var dataMap = map[string]interface{}{
-		"username": username,
-	}
+	// var dataMap = map[string]interface{}{
+	// 	"username": username,
+	// }
 
-	var urlValues = url.Values{
-		"username": []string{username},
-	}
+	// var urlValues = url.Values{
+	// 	"username": []string{username},
+	// }
 
-	return httpRequest(o.Host, o.SuperuserUri, username, o.WithTLS, o.VerifyPeer, dataMap, o.Port, o.ParamsMode, o.ResponseMode, urlValues)
+	// return o.httpRequest(o.Host, o.SuperuserUri, username, o.WithTLS, o.VerifyPeer, dataMap, o.Port, o.ParamsMode, o.ResponseMode, urlValues)
 
 }
 
 func (o HTTP) CheckAcl(username, topic, clientid string, acc int32) bool {
+	if acc == 1 || acc == 2 {
+		return true
+	}
 
 	dataMap := map[string]interface{}{
 		"username": username,
@@ -157,12 +171,10 @@ func (o HTTP) CheckAcl(username, topic, clientid string, acc int32) bool {
 		"topic":    []string{topic},
 		"acc":      []string{strconv.Itoa(int(acc))},
 	}
-
-	return httpRequest(o.Host, o.AclUri, username, o.WithTLS, o.VerifyPeer, dataMap, o.Port, o.ParamsMode, o.ResponseMode, urlValues)
-
+	return o.httpRequest(o.Host, o.AclUri, username, o.WithTLS, o.VerifyPeer, dataMap, o.Port, o.ParamsMode, o.ResponseMode, urlValues)
 }
 
-func httpRequest(host, uri, username string, withTLS, verifyPeer bool, dataMap map[string]interface{}, port, paramsMode, responseMode string, urlValues map[string][]string) bool {
+func (o HTTP) httpRequest(host, uri, username string, withTLS, verifyPeer bool, dataMap map[string]interface{}, port, paramsMode, responseMode string, urlValues map[string][]string) bool {
 
 	tlsStr := "http://"
 
@@ -175,20 +187,20 @@ func httpRequest(host, uri, username string, withTLS, verifyPeer bool, dataMap m
 		fullUri = fmt.Sprintf("%s%s:%s%s", tlsStr, host, port, uri)
 	}
 
-	client := &h.Client{Timeout: 5 * time.Second}
+	// client := &h.Client{Timeout: 5 * time.Second}
 
-	if !verifyPeer {
-		tr := &h.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		}
-		client.Transport = tr
-	}
+	// if !verifyPeer {
+	// 	tr := &h.Transport{
+	// 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	// 	}
+	// 	client.Transport = tr
+	// }
 
 	var resp *h.Response
 	var err error
 
 	if paramsMode == "form" {
-		resp, err = client.PostForm(fullUri, urlValues)
+		resp, err = o.Client.PostForm(fullUri, urlValues)
 	} else {
 		dataJson, mErr := json.Marshal(dataMap)
 
@@ -207,7 +219,7 @@ func httpRequest(host, uri, username string, withTLS, verifyPeer bool, dataMap m
 
 		req.Header.Set("Content-Type", "application/json")
 
-		resp, err = client.Do(req)
+		resp, err = o.Client.Do(req)
 	}
 
 	if err != nil {

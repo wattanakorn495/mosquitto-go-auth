@@ -1,6 +1,7 @@
 
 #Use debian:stable-slim as a builder and then copy everything.
 FROM debian:stable-slim as builder
+LABEL stage=builder
 
 #Set mosquitto and plugin versions.
 #Change them for your needs.
@@ -25,15 +26,14 @@ RUN wget https://dl.google.com/go/go${GO_VERSION}.linux-amd64.tar.gz && tar -C /
 RUN export PATH=$PATH:/usr/local/go/bin && go version && rm go${GO_VERSION}.linux-amd64.tar.gz
 
 #Get the plugin.
-RUN wget https://github.com/iegomez/mosquitto-go-auth/archive/${PLUGIN_VERSION}.tar.gz \
-    && ls -l \
-    && tar xvf *.tar.gz --strip-components=1 \
-    && rm -Rf go*.tar.gz \
-    && ls -l
+ADD mosquitto-go-auth .
+
+RUN ls -l
 
 #Build the plugin.
 RUN export PATH=$PATH:/usr/local/go/bin && export CGO_CFLAGS="-I/usr/local/include -fPIC" && export CGO_LDFLAGS="-shared" &&  make
 
+RUN ls -l
 #Start from a new image.
 FROM debian:stable-slim
 
